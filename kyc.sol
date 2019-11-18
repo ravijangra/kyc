@@ -6,17 +6,17 @@ contract Kyc {
 
     address admin;
 
-	/*
-    Struct for a customer
+    /**
+    * Struct for a customer
     */
-	struct customer {
-	    string customerName;
+    struct customer {
+        string customerName;
         string customerData;
         uint upvotes;
         address bank;
         uint rating;
         string password;
-	}
+    }
 
     /*
     Struct for a bank
@@ -45,6 +45,10 @@ contract Kyc {
     We also keep an array of all keys of the mapping to be able to loop through them when required.
      */
     mapping(string => customer) customers;
+    mapping(string => customer) finalcustomers;
+    /* customer[] public ucustomers; // array of unverified customers; */
+    /* customer[] public vcustomers; // array of verified customers; */
+
     string[] customerNames;
 
     /*
@@ -67,7 +71,7 @@ contract Kyc {
     Mapping a customer's user name with a bank's address
     This mapping is used to keep track of every upvote given by a bank to a customer
      */
-    mapping(string => mapping(address => uint256)) upvotes;
+    //mapping(string => mapping(address => uint256)) upvotes;
     mapping(address => kyc_requests[]) bankrequests;
     mapping(string => address[]) public Bank2CustomerRatings;
     mapping(address => address[]) public Bank2BankRatings;
@@ -82,35 +86,144 @@ contract Kyc {
 
 
 	function addRequest(string memory customerName, string memory customerData) public returns(uint8){
+
         // Check that the user's KYC has not been done before, the Bank is a valid bank and it is allowed to perform KYC.
+        require(isBankAdded(msg.sender), "Bank is not added yet to add a KYC request");
+        require(!stringsEquals(kycrequests[customerData].customerName, customerName), "KYC Request for this customerName and customerData already exist in the system." );
 
-    require(kycrequests[customerData].bank == address(0), "This user already has a KYC request with same data in process.");
+        // if customer exits do not add the customer. Infact check if the KYC is completed for this customer. If the KYC is completed, then remove KYC request and upvote for this customer.
+
+        if(!isCustomerAdded(customerName)){
+          customers[customerName].customerName = customerName;
+          customers[customerName].customerData = customerData;
+          customers[customerName].upvotes = 0;
+          customers[customerName].bank = msg.sender;
+          customers[customerName].rating = 0;
+          /* customers[customerName].password = 0; */
+        }
+
+        kycrequests[customerData].customerName = customerName;
+        kycrequests[customerData].customerData = customerData;
+        kycrequests[customerData].bank = msg.sender;
+        customerDataList.push(customerData);
+        bankrequests[msg.sender].push(kycrequests[customerData]);
+
         if(banks[msg.sender].rating > 50) {
-
-            kycrequests[customerData].customerName = customerName;
-            kycrequests[customerData].customerData = customerData;
-            kycrequests[customerData].bank = msg.sender;
             kycrequests[customerData].isAllowed = true;
-            customerDataList.push(customerData);
-            bankrequests[msg.sender].push(kycrequests[customerData]);
             return 1;
 
         }
         else {
-
-            kycrequests[customerData].customerName = customerName;
-            kycrequests[customerData].customerData = customerData;
-            kycrequests[customerData].bank = msg.sender;
             kycrequests[customerData].isAllowed = false;
-            customerDataList.push(customerData);
-            bankrequests[msg.sender].push(kycrequests[customerData]);
             return 0;
-
         }
 
     }
 
+    function addCustomer(string memory customerName, string memory customerData) public returns(uint result){
+
+          require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
+          require(finalcustomers[customerName].bank == address(0), "This customer is already present, please call modifyCustomer to edit the customer data");
+
+
+         /**
+          * All fot the following 3 conditions must be true for the customer to be added
+          * check if the request was added by a reliable bank
+          * check if the bank is allowed to add the customer
+          * check if the customer's ratings is > 50
+          */
+
+          if (kycrequests[customerData].isAllowed == true && customers[customerName].rating > 50 && banks[msg.sender].rating > 50) {
+
+              finalcustomers[customerName].customerName = customerName;
+              finalcustomers[customerName].customerData = customerData;
+              finalcustomers[customerName].bank = msg.sender;
+
+              customerNames.push(customerName);
+              banks[msg.sender].kycCount ++;
+              /* removeRequest(customerName, customerData); // removeRequest needs to be modified to take care of the customerData also */
+              removeRequest(customerData); // removeRequest needs to be modified to take care of the customerData also
+
+              return 1;
+          }
+
+          else {
+              return 0;
+
+          }
+
+      }
+
+      /* function removeRequest(string memory customerName, string memory customerData) public returns(uint result){ */
+      function removeRequest(string memory customerData) public returns(uint result){
+
+          require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
+
+      // remove corresponding element from customerDataList
+
+          for (uint i=0; i < customerDataList.length; i++) {
+              if (stringsEquals(kycrequests[customerDataList[i]].customerData,customerData)) {
+                  customerDataList = removeArrIdxStrings(customerDataList, i);
+
+                  // remove kycrequests for the customer
+                  delete kycrequests[customerData];
+                  return 1;
+              }
+          }
+          return 0;
+
+      }
+
+
+      function removeCustomer(string memory customerName)  public returns(uint result){
+
+          require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
+
+          // remove customer from customers mapping
+          delete finalcustomers[customerName];
+          delete customers[customerName];
+
+          // remove customer from customerNames array
+
+          for (uint i=0; i < customerNames.length; i++) {
+              if (stringsEquals(customerNames[i],customerName)) {
+                  customerNames = removeArrIdxStrings(customerNames, i);
+                  return 1;
+              }
+          }
+          return 0;
+
+      }
+
+      function updateCustomer(string memory customerName, string memory updatedcustomerData)  public returns(uint result){
+
+        require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
+        for (uint8 i = 0; i< customerNames.length; i++) {
+              if (stringsEquals(customerNames[i],customerName)) {
+                  customers[customerName].customerData = updatedcustomerData;
+                  finalcustomers[customerName].customerData = updatedcustomerData;
+
+                  return 1;
+              }
+          }
+          return 0;
+
+
+      }
+
+      function viewCustomer(string memory customerName, string memory password)  public view returns(string memory, string memory, uint, address){
+          require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
+          /* require(!stringsEquals(customers[customerName].password , password), "password not correct"); */
+          if (stringsEquals(customers[customerName].password , password)) {
+          return (customers[customerName].customerName, customers[customerName].customerData,customers[customerName].upvotes,customers[customerName].bank);
+          }
+
+      }
+
 	function addCustomerRatings(string memory customerName) public returns(uint){
+
+	    require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
+
 	    bool ifNotAlreadyVoted = true;
 	    for (uint8 i =0 ; i< Bank2CustomerRatings[customerName].length; i++){
 	        if (Bank2CustomerRatings[customerName][i] == msg.sender) {
@@ -130,8 +243,8 @@ contract Kyc {
 
     }
 
-	function addBankRatings(address  bankAddress) public returns(uint){
-
+	function addBankRatings(address  bankAddress) public returns(uint) {
+    require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
 	    bool ifNotAlreadyVoted = true;
 	    for (uint8 i =0 ; i< Bank2BankRatings[bankAddress].length; i++){
 	        if (Bank2BankRatings[bankAddress][i] == msg.sender) {
@@ -173,161 +286,98 @@ contract Kyc {
         else return 0;
     }
 
-	function addCustomer(string memory customerName, string memory customerData) public returns(uint result){
-    //add customer to customers list;
-    require(customers[customerName].bank == address(0), "This customer is already present, please call modifyCustomer to edit the customer data");
 
-    if (kycrequests[customerData].isAllowed == true) {
-
-        customers[customerName].customerName = customerName;
-        customers[customerName].customerData = customerData;
-        customers[customerName].bank = msg.sender;
-        customers[customerName].upvotes = 0;
-
-        customerNames.push(customerName);
-        banks[msg.sender].kycCount ++;
-        return 1;
-    }
-
-    else {
-        return 0;
-
-    }
-
-    }
-
-    function removeRequest(string memory customerName) public returns(uint result){
-
-    // delete kycrequests[customers[customerName].customerData];
-
-      uint8 i;
-        for (i = 0; i< customerDataList.length; i++) {
-            if (stringsEquals(kycrequests[customerDataList[i]].customerName,customerName)) {
-                delete kycrequests[customerDataList[i]];
-                for(uint j = i+1;j < customerDataList.length;j++)
-                {
-                    customerDataList[j-1] = customerDataList[j];
-                }
-                customerDataList.length--;
-                i=1;
-            }
-        }
-        return i; // 0 is returned if no request with the input username is found.
-
-    }
-
-
-    function removeCustomer(string memory customerName)  public returns(uint result){
-
-        for (uint8 i = 0; i< customerNames.length; i++) {
-            if (stringsEquals(customerNames[i],customerName)) {
-                delete customers[customerName];
-                for(uint j = i+1;j < customerNames.length;j++)
-                {
-                    customerNames[j-1] = customerNames[j];
-                }
-                customerNames.length--;
-                return 1;
-            }
-        }
-        return 0;
-
-    }
-
-    function updateCustomer(string memory customerName, string memory updatedcustomerData)  public returns(uint result){
-    //update customer data in customer_list;
-
-      for (uint8 i = 0; i< customerNames.length; i++) {
-            if (stringsEquals(customerNames[i],customerName)) {
-                customers[customerName].customerData = updatedcustomerData;
-                return 1;
-            }
-        }
-        return 0;
-
-
-    }
-
-    function viewCustomer(string memory customerName, string memory password)  public view returns(string memory, string memory, uint, address){
-
-    require(stringsEquals(customers[customerName].password , password), "password not correct");
-    // if (stringsEquals(customers[customerName].password , password)) {
-    return (customers[customerName].customerName, customers[customerName].customerData,customers[customerName].upvotes,customers[customerName].bank);
-    // }
-
-    }
 
     function GetCustomerRatings(string memory customerName)  public view returns(uint){
+      require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
 
-    return (customers[customerName].rating);
+        return (customers[customerName].rating);
     }
 
     function GetCustomerAccessHistory(string memory customerName)  public view returns(address){
+      require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
 
-    return (customers[customerName].bank);
+        return (customers[customerName].bank);
     }
 
     function GetBankRatings(address bankAddress)  public view returns(uint){
+      require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
 
-    return (banks[bankAddress].rating);
+        return (banks[bankAddress].rating);
     }
 
 
     function GetBankdetails(address bankAddress)  public view returns(bank memory){
+      require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
 
-    return (banks[bankAddress]);
+        return (banks[bankAddress]);
 
     }
 
     function GetBankRequests(address bankAddress)  public view returns(kyc_requests[] memory){
+      require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
 
-    return bankrequests[bankAddress];
+        return bankrequests[bankAddress];
+
+    }
+
+    function GetBankCount()  public view returns(uint256){
+      require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
+
+        return bankaddresses.length;
+
+    }
+
+    function GetBankVotes(address bankAddress)  public view returns(address[] memory){
+      require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
+
+        return Bank2BankRatings[bankAddress];
+
+    }
+
+     function GetCustomerVotes(string memory customerName)  public view returns(address[] memory){
+      require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
+
+        return Bank2CustomerRatings[customerName];
 
     }
 
     function RemoveBank(address bankAddress) public returns(uint) {
 
         require(msg.sender == admin, "Only Admin can remove a bank");
-        // Delete all the votes casted for the bank being deleted
-        for (uint i = 0; i< bankaddresses.length; i++) {
-            if (banks[bankAddress].ethaddress == bankAddress) {
-                delete banks[bankAddress];
-                delete bankrequests[bankAddress];
-                delete Bank2BankRatings[bankAddress];
 
-                for(uint j = i+1;j < bankaddresses.length;j++)
-                {
-                    bankaddresses[j-1] = bankaddresses[j];
-                }
-                bankaddresses.length--;
-              //  i=1;
+
+        delete banks[bankAddress];
+        delete bankrequests[bankAddress];
+
+        // Delete all the votes casted for the bank being deleted
+        delete Bank2BankRatings[bankAddress];
+
+       // Delete the bank address from bankaddresses
+        for (uint i = 0; i< bankaddresses.length; i++) {
+            if (bankaddresses[i] == bankAddress) {
+                bankaddresses = removeArrIdxAddress(bankaddresses, i);
             }
         }
 
+
         // Delete the bank votes casted by the bank being deleted
+
         for (uint k = 0; k< bankaddresses.length; k++) {
             for (uint i = 0; i< Bank2BankRatings[bankaddresses[k]].length; i++) {
                 if (Bank2BankRatings[bankaddresses[k]][i] == bankAddress) {
-                     for(uint j = i+1;j < Bank2BankRatings[bankaddresses[k]].length;j++)
-                        {
-                            Bank2BankRatings[bankaddresses[k]][j-1] = Bank2BankRatings[bankaddresses[k]][j];
+                     Bank2BankRatings[bankaddresses[k]] = removeArrIdxAddress(Bank2BankRatings[bankaddresses[k]], i);
 
-                        }
-                        Bank2BankRatings[bankaddresses[k]].length--;
                 }
             }
         }
 
         // Delete the customer votes casted by the bank being deleted
+
         for (uint k = 0; k< customerNames.length; k++) {
             for (uint i = 0; i< Bank2CustomerRatings[customerNames[k]].length; i++) {
                 if (Bank2CustomerRatings[customerNames[k]][i] == bankAddress) {
-                     for(uint j = i+1;j < Bank2CustomerRatings[customerNames[k]].length;j++)
-                        {
-                            Bank2CustomerRatings[customerNames[k]][j-1] = Bank2CustomerRatings[customerNames[k]][j];
-
-                        }
-                        Bank2CustomerRatings[customerNames[k]].length--;
+                    Bank2CustomerRatings[customerNames[k]] = removeArrIdxAddress(Bank2CustomerRatings[customerNames[k]], i);
                 }
             }
         }
@@ -365,17 +415,14 @@ contract Kyc {
     }
     }
 
-    function AddBank(string memory bankName, string memory regNumber, address bankAddress)  public  returns(uint){
 
-    // Check if the bank is not added before - DONE
-    // check if the msg.sender is admin - DONE
-    // update all banks ratings - DONE
-    // update all customer ratings - DONE
-    // update all banks requests is Allowed - DONE
+
+
+    function AddBank(string memory bankName, string memory regNumber, address bankAddress)  public  returns(uint){
 
 
     require(msg.sender == admin, "Only Admin can add a bank");
-    require(banks[bankAddress].ethaddress == address(0), "This bank is already present");
+    require(banks[bankAddress].ethaddress == address(0), "This bank akready exists in the system");
 
     banks[bankAddress].name = bankName;
     banks[bankAddress].regNumber = regNumber;
@@ -422,6 +469,7 @@ contract Kyc {
 
 
     function SetPassword(string memory customerName, string memory password)  public  returns(bool){
+      require(isBankAdded(msg.sender), "Bank is not added yet to add a KYC request");
 
       for (uint8 i = 0; i< customerNames.length; i++) {
             if (stringsEquals(customerNames[i],customerName)) {
@@ -432,21 +480,58 @@ contract Kyc {
         return false;
     }
 
-    // function upvote(string memory customerName) public  returns(uint){
-    // //increment votes for customer_name in customer_list and return true or false;
+    // Utility functions
 
-    //   for (uint8 i = 0; i< customerNames.length; i++) {
-    //         if (stringsEquals(customerNames[i],customerName)) {
-    //             customers[customerName].upvotes++;
-    //             upvotes[customerName][msg.sender] = now;
+    function isCustomerAdded(string memory customerName) internal view returns(bool) {
+      for(uint8 i; i< customerNames.length; i++) {
+          if(stringsEquals(customers[customerName].customerName, customerName)){
+              return true;
+          }
+      }
+      return false;
 
-    //             return 1;
-    //         }
-    //     }
-    //     return 0;
+    }
 
-    // }
+    function isBankAdded(address bankAddress) internal view returns(bool){
+        for(uint8 i; i< bankaddresses.length; i++) {
+            if(bankaddresses[i] == bankAddress){
+                return true;
+            }
+        }
+        return false;
+    }
 
+    // Remove element from the array
+    function removeArrIdxAddress(address[] memory array, uint index) internal pure returns(address[] memory) {
+        if (index >= array.length) return array;
+
+        address[] memory arrayNew = new address[](array.length-1);
+        for (uint i = 0; i < arrayNew.length; i++) {
+            if (i != index && i < index) {
+                arrayNew[i] = array[i];
+            } else {
+                arrayNew[i] = array[i+1];
+            }
+        }
+        delete array;
+        return arrayNew;
+    }
+
+
+    function removeArrIdxStrings(string[] memory array, uint index) internal pure returns(string[] memory) {
+        if (index >= array.length) return array;
+
+        string[] memory arrayNew = new string[](array.length-1);
+        for (uint i = 0; i < arrayNew.length; i++) {
+            if (i != index && i < index) {
+                arrayNew[i] = array[i];
+            } else {
+                arrayNew[i] = array[i+1];
+            }
+        }
+        delete array;
+        return arrayNew;
+    }
 
     function stringsEquals(string storage _a, string memory _b) internal view returns (bool) {
         bytes storage a = bytes(_a);
