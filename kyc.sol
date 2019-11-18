@@ -90,7 +90,7 @@ contract Kyc {
 
         // Check that the user's KYC has not been done before, the Bank is a valid bank and it is allowed to perform KYC.
         require(isBankAdded(msg.sender), "Bank is not added yet to add a KYC request");
-        require(!stringsEquals(kycrequests[customerData].customerName, customerName), "KYC Request for this customerName and customerData already exist in the system." );
+        require(!(kycrequests[customerData].bank == msg.sender), "KYC Request for this customerName and customerData is already added by the same bank" );
 
         // if customer exits do not add the customer. Infact check if the KYC is completed for this customer. If the KYC is completed, then remove KYC request and upvote for this customer.
 
@@ -103,6 +103,7 @@ contract Kyc {
           customerNames.push(customerName);
         }
 
+        customers[customerName].bank = msg.sender;
         kycrequests[customerData].customerName = customerName;
         kycrequests[customerData].customerData = customerData;
         kycrequests[customerData].bank = msg.sender;
@@ -141,8 +142,7 @@ contract Kyc {
             finalCustomers[customerName].bank = msg.sender;
             finalcustomerNames.push(customerName);
             banks[msg.sender].kycCount ++;
-            /* removeRequest(customerName, customerData); // removeRequest needs to be modified to take care of the customerData also */
-            removeRequest(customerData); // removeRequest needs to be modified to take care of the customerData also
+            //removeRequest(customerData); // removeRequest needs to be modified to take care of the customerData also
 
             return 1;
         }
@@ -200,10 +200,19 @@ contract Kyc {
 
         require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
         require(finalCustomers[customerName].bank == msg.sender, "Bank can not update other banks added customer");
+        require(stringsEquals(finalCustomers[customerName].customerName, customerName), "customer is not a verified customer and not present in the final customer yet");
         for (uint8 i = 0; i< customerNames.length; i++) {
             if (stringsEquals(customerNames[i],customerName)) {
+
+                // Delete customer from final customer list
+                delete finalCustomers[customerName];
+
+                // Delete all the votes cast for this customer
+                delete Bank2CustomerRatings[customerName];
+
                 customers[customerName].customerData = updatedcustomerData;
-                finalCustomers[customerName].customerData = updatedcustomerData;
+                customers[customerName].upvotes = 0;
+                customers[customerName].rating = 0;
 
                 return 1;
             }
@@ -213,7 +222,7 @@ contract Kyc {
 
     function viewCustomer(string memory customerName, string memory password)  public view returns(string memory, string memory, uint, address){
         require(isBankAdded(msg.sender), "Bank is not added yet to perform this operation");
-        require(stringsEquals(customers[customerName].password , password), "Not authorised to voeview the customer details");
+        require(stringsEquals(customers[customerName].password , password), "Not authorised to view the customer details");
         return (customers[customerName].customerName, customers[customerName].customerData,customers[customerName].upvotes,customers[customerName].bank);
 
     }
